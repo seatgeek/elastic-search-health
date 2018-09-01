@@ -1,0 +1,43 @@
+sudo: required
+
+language: go
+
+go:
+  - 1.10.1
+
+services:
+  - docker
+
+cache:
+  directories:
+    - vendor/
+
+env:
+  global:
+    - CGO_ENABLED=0
+    - GOBUILD="linux-amd64 windows-amd64 darwin-amd64"
+
+script:
+  - make -j dist
+  - ls -la build
+
+after_success:
+  - export PR=https://api.github.com/repos/$TRAVIS_REPO_SLUG/pulls/$TRAVIS_PULL_REQUEST
+  - export BRANCH=$(if [ "$TRAVIS_PULL_REQUEST" == "false" ]; then echo $TRAVIS_BRANCH; else echo `curl -s $PR | jq -r .head.ref`; fi)
+  - echo "$DOCKER_PASSWORD" | docker login --username "$DOCKER_USERNAME" --password-stdin
+  - if [[ "$TRAVIS_PULL_REQUEST" != "false" ]]; then make -j docker TAG=pr-$TRAVIS_PULL_REQUEST COMMIT=$TRAVIS_COMMIT; fi
+  - if [[ "$TRAVIS_TAG" =~ ^v.*$ ]]; then make -j docker TAG=$TRAVIS_TAG COMMIT=$TRAVIS_COMMIT; fi
+  - if [[ "$BRANCH" == "master" ]]; then make -j docker TAG=latest COMMIT=$TRAVIS_COMMIT; fi
+
+deploy:
+  provider: releases
+  api_key: "${GITHUB_TOKEN}"
+  file:
+    - build/elastic-search-health-linux-amd64
+    - build/elastic-search-health-windows-amd64
+    - build/elastic-search-health-darwin-amd64
+  skip_cleanup: true
+  overwrite: true
+  on:
+    tags: true
+    repo: seatgeek/elastic-search-health
